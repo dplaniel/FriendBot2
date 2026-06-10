@@ -45,12 +45,20 @@ class ChatCog(commands.Cog):
         # channel id -> deque of "Name: message" lines
         self.transcripts: dict[int, deque[str]] = {}
         self.persona: str | None = config.PERSONA or None
+        self.persona_counts: dict[str, int] = {}
         self.known_personas: list[str] = []
         self._loader: asyncio.Task | None = None
 
     # -- lifecycle ----------------------------------------------------------
     async def cog_load(self) -> None:
-        self.known_personas = self._read_personas_file()
+        self.persona_counts = self._read_personas_file()
+        # Listing threshold: below this there isn't enough of a user in the
+        # training data for the impression to land.
+        self.known_personas = [
+            name
+            for name, count in self.persona_counts.items()
+            if count >= config.PERSONA_MIN_MESSAGES
+        ]
         if self.persona is None and self.known_personas:
             self.persona = self.known_personas[0]
             log.info("No FRIENDBOT_PERSONA set; defaulting to %r", self.persona)
@@ -70,21 +78,17 @@ class ChatCog(commands.Cog):
             log.exception("Failed to load LLM; chat disabled.")
 
     @staticmethod
-    def _read_personas_file() -> list[str]:
-        """Top users by message count, written by tools/build_dataset.py.
+    def _read_personas_file() -> dict[str, int]:
+        """User -> message count, from tools/build_dataset.py output.
 
-        Users below PERSONA_MIN_MESSAGES are left out: there isn't enough of
-        them in the training data for the impression to land.
+        Ordered most-active first, matching the file. Unfiltered: callers
+        apply the listing/warning thresholds.
         """
         try:
             entries = json.loads(config.PERSONAS_FILE.read_text())
-            return [
-                e["name"]
-                for e in entries
-                if e.get("messages", 0) >= config.PERSONA_MIN_MESSAGES
-            ]
+            return {e["name"]: e.get("messages", 0) for e in entries}
         except (OSError, ValueError, KeyError):
-            return []
+            return {}
 
     # -- transcript bookkeeping ----------------------------------------------
     def _persona_label(self) -> str:
@@ -197,10 +201,13 @@ class ChatCog(commands.Cog):
             await ctx.reply(f"I'm currently chatting as **{self._persona_label()}**.")
             return
         name = name.strip()
-        if self.known_personas and name not in self.known_personas:
+        if (
+            self.persona_counts
+            and self.persona_counts.get(name, 0) < config.PERSONA_WARN_MESSAGES
+        ):
             await ctx.reply(
                 f"I wasn't trained on much from **{name}** — switching anyway, "
-                f"but `/personas` lists who I actually know."
+                f"but `/personas` lists who I do better impressions of."
             )
         else:
             await ctx.reply(f"Okay, I'm **{name}** now.")
