@@ -22,7 +22,7 @@ class FriendBot(commands.Bot):
         # Discord developer portal.
         intents.message_content = True
         super().__init__(command_prefix=config.COMMAND_PREFIX, intents=intents)
-        self.backend = FluxBackend(config.FLUX_REPO_PATH)
+        self.backend = FluxBackend(config.FLUX_REPO_PATH, model=config.MODEL)
 
     async def setup_hook(self) -> None:
         await self.add_cog(ImageGenerationCog(self, self.backend))

@@ -2,11 +2,12 @@
 Thin async wrapper around the local ``flux/generate.py`` script.
 
 Rather than shelling out to ``generate.py`` for every prompt (which would reload
-~7 GB of model weights each time), this loads the FLUX.1-schnell pipeline once
-and keeps it resident, calling ``generate.py``'s own ``load_pipeline`` and
-``generate`` functions. All torch/CUDA work runs on a single dedicated worker
-thread so the asyncio event loop is never blocked and the CUDA context stays
-pinned to one thread.
+several GB of model weights each time), this loads the chosen pipeline once and
+keeps it resident, calling ``generate.py``'s own ``load_pipeline`` and
+``generate`` functions. The model ("sd35" or "flux") is passed straight through
+to ``load_pipeline``, the same value generate.py's ``--model`` flag selects. All
+torch/CUDA work runs on a single dedicated worker thread so the asyncio event
+loop is never blocked and the CUDA context stays pinned to one thread.
 """
 
 from __future__ import annotations
@@ -23,8 +24,9 @@ from typing import Optional
 class FluxBackend:
     """Loads and drives the flux generate.py pipeline for the bot."""
 
-    def __init__(self, repo_path: Path):
+    def __init__(self, repo_path: Path, model: str = "sd35"):
         self.repo_path = Path(repo_path)
+        self.model = model
         self._module: Optional[ModuleType] = None
         self._pipe = None
         # max_workers=1 keeps every torch call on the same thread (required for a
@@ -58,7 +60,7 @@ class FluxBackend:
 
         def _load():
             module = self._import_generate()
-            pipe = module.load_pipeline()
+            pipe = module.load_pipeline(self.model)
             return module, pipe
 
         self._module, self._pipe = await loop.run_in_executor(self._executor, _load)

@@ -53,11 +53,15 @@ class ImageGenerationCog(commands.Cog):
 
     async def _load_backend(self) -> None:
         try:
-            log.info("Loading FLUX pipeline from %s ...", self.backend.repo_path)
+            log.info(
+                "Loading %s pipeline from %s ...",
+                self.backend.model,
+                self.backend.repo_path,
+            )
             await self.backend.load()
-            log.info("FLUX pipeline ready.")
+            log.info("%s pipeline ready.", self.backend.model)
         except Exception:  # noqa: BLE001 - surface any load failure in the logs
-            log.exception("Failed to load FLUX pipeline; image generation disabled.")
+            log.exception("Failed to load image pipeline; image generation disabled.")
 
     # -- queue worker -------------------------------------------------------
     async def _process_queue(self) -> None:

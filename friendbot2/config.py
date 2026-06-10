@@ -49,6 +49,12 @@ FLUX_REPO_PATH = Path(
     os.environ.get("FLUX_REPO_PATH", Path(__file__).resolve().parent.parent.parent / "flux")
 ).expanduser()
 
+# Which model generate.py loads: "sd35" (Stable Diffusion 3.5 Large Turbo) or
+# "flux" (FLUX.1-schnell). Mirrors generate.py's --model option.
+MODEL = os.environ.get("FRIENDBOT_MODEL", "sd35").strip().lower()
+if MODEL not in ("flux", "sd35"):
+    raise ValueError(f"FRIENDBOT_MODEL must be 'flux' or 'sd35', got {MODEL!r}")
+
 # Queue / fairness knobs.
 MAX_QUEUE_SIZE = int(os.environ.get("FRIENDBOT_MAX_QUEUE", "16"))
 USER_PROMPT_CAP = int(os.environ.get("FRIENDBOT_USER_CAP", "5"))
