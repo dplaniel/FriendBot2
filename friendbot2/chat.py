@@ -71,10 +71,18 @@ class ChatCog(commands.Cog):
 
     @staticmethod
     def _read_personas_file() -> list[str]:
-        """Top users by message count, written by tools/build_dataset.py."""
+        """Top users by message count, written by tools/build_dataset.py.
+
+        Users below PERSONA_MIN_MESSAGES are left out: there isn't enough of
+        them in the training data for the impression to land.
+        """
         try:
             entries = json.loads(config.PERSONAS_FILE.read_text())
-            return [e["name"] for e in entries]
+            return [
+                e["name"]
+                for e in entries
+                if e.get("messages", 0) >= config.PERSONA_MIN_MESSAGES
+            ]
         except (OSError, ValueError, KeyError):
             return []
 
@@ -204,7 +212,8 @@ class ChatCog(commands.Cog):
     async def personas_cmd(self, ctx: commands.Context) -> None:
         if not self.known_personas:
             await ctx.reply(
-                "No personas file found — run tools/build_dataset.py to create one."
+                "I don't know anyone well enough to imitate yet — run "
+                "tools/build_dataset.py, or lower FRIENDBOT_PERSONA_MIN_MESSAGES."
             )
             return
         listing = "\n".join(f"- {name}" for name in self.known_personas[:15])

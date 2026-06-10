@@ -106,3 +106,7 @@ CHAT_CONTEXT_MESSAGES = int(os.environ.get("FRIENDBOT_CHAT_CONTEXT", "25"))
 # (written by tools/build_dataset.py), falling back to the bot's own name.
 PERSONA = os.environ.get("FRIENDBOT_PERSONA", "").strip()
 PERSONAS_FILE = REPO_ROOT / "data" / "sft" / "personas.json"
+
+# Only offer personas for users with at least this many messages in the
+# training data; below that the impression is too thin to be fun.
+PERSONA_MIN_MESSAGES = int(os.environ.get("FRIENDBOT_PERSONA_MIN_MESSAGES", "1000"))
