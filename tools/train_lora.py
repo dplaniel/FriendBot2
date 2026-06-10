@@ -12,6 +12,8 @@ Usage:
   python tools/train_lora.py                                # defaults
   python tools/train_lora.py --base meta-llama/Llama-3.2-3B --epochs 2
   python tools/train_lora.py --batch-size 2 --grad-accum 8  # if you have headroom
+  python tools/train_lora.py --batch-size 2 --grad-accum 8 --resume
+                             # continue an interrupted run (same flags as before!)
 
 Memory notes for 12 GB cards: Llama-3's 128k vocab makes the logits tensor the
 peak allocation (~250 MB per sample at 1024 tokens, more in backward), so
@@ -52,7 +54,19 @@ def main() -> None:
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument(
+        "--resume", nargs="?", const=True, default=None, metavar="CHECKPOINT",
+        help="Resume an interrupted run: bare --resume picks the latest "
+             "checkpoint-* in --out, or pass an explicit checkpoint directory. "
+             "Use the same hyperparameters as the original run, or the "
+             "skipped-step bookkeeping will be wrong.",
+    )
     args = parser.parse_args()
+
+    if args.resume is True and not list(args.out.glob("checkpoint-*")):
+        raise SystemExit(f"--resume given but no checkpoint-* found in {args.out}")
+    if isinstance(args.resume, str) and not Path(args.resume).is_dir():
+        raise SystemExit(f"--resume checkpoint not found: {args.resume}")
 
     # Heavy imports after argparse so --help stays instant.
     import torch
@@ -136,7 +150,10 @@ def main() -> None:
         peft_config=lora,
     )
 
-    trainer.train()
+    if args.resume:
+        where = args.resume if isinstance(args.resume, str) else "latest checkpoint"
+        print(f"Resuming from {where} (optimizer/scheduler/RNG state restored)")
+    trainer.train(resume_from_checkpoint=args.resume)
     trainer.save_model(str(args.out))
     tokenizer.save_pretrained(str(args.out))
     print(f"\nAdapter saved to {args.out}")
