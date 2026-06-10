@@ -247,6 +247,15 @@ class ChatCog(commands.Cog):
             self.persona = RANDOM_PERSONA
             await ctx.reply("Okay, I'll do a different impression for each message.")
             return
+        # Case-insensitive match, canonicalized to the stored capitalization:
+        # the name becomes the model's "Name:" conditioning prefix, where exact
+        # case is what it saw in training.
+        canonical = next(
+            (known for known in self.persona_counts if known.lower() == name.lower()),
+            None,
+        )
+        if canonical is not None:
+            name = canonical
         if (
             self.persona_counts
             and self.persona_counts.get(name, 0) < config.PERSONA_WARN_MESSAGES
