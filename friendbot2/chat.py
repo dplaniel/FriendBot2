@@ -191,6 +191,9 @@ class ChatCog(commands.Cog):
         ref = message.reference.resolved if message.reference else None
         return getattr(getattr(ref, "author", None), "id", None) == self.bot.user.id
 
+    async def _persona_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        return [app_commands.Choice(name=persona, value=persona) for persona in known_personas if persona.lower().startswith(current.lower())][:25]
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if config.ALLOWED_CHANNEL_IDS and message.channel.id not in config.ALLOWED_CHANNEL_IDS:
@@ -238,6 +241,7 @@ class ChatCog(commands.Cog):
         name="persona", description="Show or set which user I chat as."
     )
     @app_commands.describe(name="Display name of the persona to mimic.")
+    @app_commands.autocomplete(name=_persona_autocomplete)
     async def persona_cmd(self, ctx: commands.Context, *, name: str | None = None) -> None:
         if name is None:
             await ctx.reply(f"I'm currently chatting as **{self._persona_label()}**.")
