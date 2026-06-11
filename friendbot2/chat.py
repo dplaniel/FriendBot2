@@ -192,7 +192,7 @@ class ChatCog(commands.Cog):
         return getattr(getattr(ref, "author", None), "id", None) == self.bot.user.id
 
     async def _persona_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        return [app_commands.Choice(name=persona, value=persona) for persona in known_personas if persona.lower().startswith(current.lower())][:25]
+        return [app_commands.Choice(name=persona, value=persona) for persona in self.known_personas if persona.lower().startswith(current.lower())][:25]
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
