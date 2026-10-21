@@ -35,6 +35,9 @@ _PERSONA_TAG = re.compile(r"^\[([^\]\n]+)\]\s*")
 # Pseudo-persona: pick a random listed persona for each reply.
 RANDOM_PERSONA = "randomized"
 
+# /role argument that clears the active role.
+NO_ROLE = "none"
+
 
 def _normalize(text: str) -> str:
     """Match build_dataset.py's text normalization: one line, plain emoji names."""
@@ -56,6 +59,9 @@ class ChatCog(commands.Cog):
         self.persona: str | None = configured
         self.persona_counts: dict[str, int] = {}
         self.known_personas: list[str] = []
+        # role name -> {"description": str, "lines": [str, ...]}
+        self.roles: dict[str, dict] = {}
+        self.role: str | None = None
         self._loader: asyncio.Task | None = None
 
     # -- lifecycle ----------------------------------------------------------
@@ -71,6 +77,11 @@ class ChatCog(commands.Cog):
         if self.persona is None and self.known_personas:
             self.persona = self.known_personas[0]
             log.info("No FRIENDBOT_PERSONA set; defaulting to %r", self.persona)
+        self.roles = self._read_roles_file()
+        if config.ROLE and config.ROLE.lower() != NO_ROLE:
+            self.role = self._canonical_role(config.ROLE)
+            if self.role is None:
+                log.warning("FRIENDBOT_ROLE %r not in %s; no role set.", config.ROLE, config.ROLES_FILE)
         self._loader = asyncio.create_task(self._load_backend())
 
     async def cog_unload(self) -> None:
@@ -98,6 +109,38 @@ class ChatCog(commands.Cog):
             return {e["name"]: e.get("messages", 0) for e in entries}
         except (OSError, ValueError, KeyError):
             return {}
+
+    @staticmethod
+    def _read_roles_file() -> dict[str, dict]:
+        """Role name -> definition, from roles.json (see FRIENDBOT_ROLES_FILE).
+
+        Each role's ``lines`` are seed transcript lines placed above the chat,
+        with ``{persona}`` replaced by whoever is speaking. Malformed entries
+        are skipped with a warning.
+        """
+        try:
+            raw = json.loads(config.ROLES_FILE.read_text())
+        except OSError:
+            return {}
+        except ValueError:
+            log.exception("Couldn't parse %s; no roles loaded.", config.ROLES_FILE)
+            return {}
+        roles = {}
+        for name, spec in raw.items():
+            lines = spec.get("lines") if isinstance(spec, dict) else None
+            if not (isinstance(lines, list) and lines and all(isinstance(l, str) for l in lines)):
+                log.warning("Role %r in %s has no usable \"lines\"; skipping.", name, config.ROLES_FILE)
+                continue
+            roles[name] = {"description": spec.get("description", ""), "lines": lines}
+        return roles
+
+    def _canonical_role(self, name: str) -> str | None:
+        return next((known for known in self.roles if known.lower() == name.lower()), None)
+
+    def _role_preamble(self, persona: str) -> list[str]:
+        if self.role is None:
+            return []
+        return [line.replace("{persona}", persona) for line in self.roles[self.role]["lines"]]
 
     # -- transcript bookkeeping ----------------------------------------------
     def _persona_label(self) -> str:
@@ -194,6 +237,9 @@ class ChatCog(commands.Cog):
     async def _persona_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         return [app_commands.Choice(name=persona, value=persona) for persona in self.known_personas if persona.lower().startswith(current.lower())][:25]
 
+    async def _role_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        return [app_commands.Choice(name=role, value=role) for role in [*self.roles, NO_ROLE] if role.lower().startswith(current.lower())][:25]
+
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         if config.ALLOWED_CHANNEL_IDS and message.channel.id not in config.ALLOWED_CHANNEL_IDS:
@@ -226,7 +272,9 @@ class ChatCog(commands.Cog):
         persona = self._resolve_reply_persona()
         try:
             async with message.channel.typing():
-                reply = await self.backend.chat(list(dq), persona)
+                reply = await self.backend.chat(
+                    list(dq), persona, preamble=self._role_preamble(persona)
+                )
             reply = self._render_emoji(reply, message.guild)
             await message.reply(f"[{persona}] {reply}")
         except Exception:  # noqa: BLE001
@@ -285,3 +333,40 @@ class ChatCog(commands.Cog):
         listing = "\n".join(f"- {name}" for name in self.known_personas[:15])
         listing += f"\n- {RANDOM_PERSONA} (someone different each message)"
         await ctx.reply(f"People I can do an impression of:\n{listing}")
+
+    @commands.hybrid_command(
+        name="role", description="Show or set the role my persona plays."
+    )
+    @app_commands.describe(name=f"Role from roles.json, or '{NO_ROLE}' to clear it.")
+    @app_commands.autocomplete(name=_role_autocomplete)
+    async def role_cmd(self, ctx: commands.Context, *, name: str | None = None) -> None:
+        if name is None:
+            if self.role is None:
+                await ctx.reply("I'm not playing a role right now.")
+            else:
+                await ctx.reply(f"I'm currently playing **{self.role}**.")
+            return
+        name = name.strip()
+        if name.lower() == NO_ROLE:
+            self.role = None
+            await ctx.reply("Okay, back to just being myself.")
+            return
+        canonical = self._canonical_role(name)
+        if canonical is None:
+            await ctx.reply(f"I don't know a **{name}** role — `/roles` lists the ones I do.")
+            return
+        self.role = canonical
+        await ctx.reply(f"Okay, I'm playing **{canonical}** now.")
+
+    @commands.hybrid_command(
+        name="roles", description="List the roles I can play."
+    )
+    async def roles_cmd(self, ctx: commands.Context) -> None:
+        if not self.roles:
+            await ctx.reply(f"No roles configured — add some to {config.ROLES_FILE.name}.")
+            return
+        listing = "\n".join(
+            f"- {name}" + (f" — {spec['description']}" if spec["description"] else "")
+            for name, spec in self.roles.items()
+        )
+        await ctx.reply(f"Roles I can play:\n{listing}")
