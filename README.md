@@ -68,6 +68,37 @@ answers in character; `/persona <name>` switches whose style it mimics
 (`/persona randomized` picks a different listed persona for every message) and
 `/personas` lists who it knows.
 
+On top of the persona you can layer a **role**: `/role lawyer` keeps the same
+person's voice but has them answering as a lawyer, `/role none` clears it, and
+`/roles` lists what's available. Roles live in `roles.json` (or wherever
+`FRIENDBOT_ROLES_FILE` points), so add your own:
+
+```json
+{
+  "lawyer": {
+    "description": "Answers everything like a (questionably qualified) lawyer.",
+    "lines": [
+      "{persona}: update: i passed the bar. i'm a lawyer now (not legal advice)",
+      "Sam: my boss says i'm not allowed to talk about my salary with coworkers",
+      "{persona}: that's straight up illegal in the US, the NLRA protects talking about pay"
+    ]
+  }
+}
+```
+
+The model is a base model tuned on raw transcripts, so it doesn't take
+instructions. A role works by placing those `lines` (with `{persona}` filled
+in) at the top of the conversation. The lines are always kept, even when the
+transcript has to be trimmed to fit the context. Tips for writing them:
+
+- **Show, don't announce.** A short exchange where someone asks something and
+  the persona answers in role does more than the persona saying "i'm a lawyer
+  now". Base models copy what they're shown.
+- **Use made-up names** for the other speakers, not real server members, so the
+  examples don't read like something a real person said.
+- **Write in the server's own chat style.** The model imitates lines that sound
+  like its training data more closely.
+
 ### Model and runtime choice
 
 - **Base model:** `meta-llama/Llama-3.2-3B` (the *base* checkpoint, not
@@ -134,6 +165,8 @@ $EDITOR .env
 | `FRIENDBOT_LLM_BASE` | `meta-llama/Llama-3.2-3B` | Chat base model. |
 | `FRIENDBOT_LLM_ADAPTER` | `models/adapters/friendbot-lora` | LoRA adapter path. |
 | `FRIENDBOT_PERSONA` | most active user | Whose style to mimic. |
+| `FRIENDBOT_ROLE` | — | Role from the roles file to start in (e.g. `lawyer`). |
+| `FRIENDBOT_ROLES_FILE` | `roles.json` | Role definitions (see Chat mode). |
 | `FRIENDBOT_LLM_4BIT` | `true` | NF4-quantize the LLM (disable for CPU tests). |
 | `FRIENDBOT_LLM_MAX_NEW_TOKENS` / `_TEMPERATURE` / `_TOP_P` / `_CONTEXT_TOKENS` | `120` / `0.9` / `0.95` / `1536` | Sampling and context budget. |
 | `FRIENDBOT_LLM_REPETITION_PENALTY` | `1.05` | Repetition penalty; 1.0 disables. Penalizes prompt tokens too, so keep gentle. |
@@ -171,6 +204,7 @@ Then in Discord:
 
 @FriendBot2 what do you think?           (chat mode)
 /persona Alice                           (chat mode)
+/role lawyer                             (chat mode)
 ```
 
 (`prompt`, `txt2img`, `generate`, `gen`, and `ig` are aliases for `!artistic`.)
@@ -183,7 +217,7 @@ friendbot2/            the bot
   bot.py               FriendBot: intents, mode wiring, slash sync
   image_generation.py  image mode cog (prompt queue, caps)
   flux_backend.py      resident diffusion pipeline via ../flux/generate.py
-  chat.py              chat mode cog (transcript context, /persona)
+  chat.py              chat mode cog (transcript context, /persona, /role)
   llm_backend.py       resident NF4 LLM + LoRA adapter
   config.py            env-based configuration
 tools/                 offline fine-tuning pipeline (standalone scripts)

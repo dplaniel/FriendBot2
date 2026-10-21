@@ -123,3 +123,10 @@ PERSONA_MIN_MESSAGES = int(os.environ.get("FRIENDBOT_PERSONA_MIN_MESSAGES", "100
 
 # /persona <name> still allows any name, but warns below this many messages.
 PERSONA_WARN_MESSAGES = int(os.environ.get("FRIENDBOT_PERSONA_WARN_MESSAGES", "10000"))
+
+# Role layered on top of the persona (e.g. "lawyer"), by name from ROLES_FILE.
+# Empty -> no role. Switchable at runtime with /role.
+ROLE = os.environ.get("FRIENDBOT_ROLE", "").strip()
+ROLES_FILE = Path(
+    os.environ.get("FRIENDBOT_ROLES_FILE", REPO_ROOT / "roles.json")
+).expanduser()

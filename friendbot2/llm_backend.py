@@ -19,7 +19,7 @@ import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 log = logging.getLogger(__name__)
 
@@ -115,11 +115,24 @@ class LLMBackend:
         return self._model is not None
 
     # -- generation ---------------------------------------------------------
-    def _chat(self, transcript_lines: list[str], persona: str) -> str:
+    def _chat(
+        self, transcript_lines: list[str], persona: str, preamble: list[str]
+    ) -> str:
         import torch
         from transformers import LogitsProcessorList
 
-        prompt = "\n".join([*transcript_lines, f"{persona}:"])
+        lines = list(transcript_lines)
+
+        def build() -> str:
+            return "\n".join([*preamble, *lines, f"{persona}:"])
+
+        prompt = build()
+        if preamble:
+            # Left truncation would eat the preamble first; drop whole transcript
+            # lines from the oldest end instead so the role always survives.
+            while lines and len(self._tokenizer(prompt).input_ids) > self.context_tokens:
+                lines.pop(0)
+                prompt = build()
         inputs = self._tokenizer(
             prompt,
             return_tensors="pt",
@@ -162,13 +175,22 @@ class LLMBackend:
             reply = reply[len(persona) + 1 :].strip()
         return reply[:1900] or "..."
 
-    async def chat(self, transcript_lines: list[str], persona: str) -> str:
-        """Continue the transcript as ``persona`` and return their next line."""
+    async def chat(
+        self,
+        transcript_lines: list[str],
+        persona: str,
+        preamble: Sequence[str] = (),
+    ) -> str:
+        """Continue the transcript as ``persona`` and return their next line.
+
+        ``preamble`` lines (e.g. a role's seed lines) are placed above the
+        transcript and are never truncated away.
+        """
         if not self.ready:
             raise RuntimeError("LLM is not loaded yet.")
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            self._executor, self._chat, list(transcript_lines), persona
+            self._executor, self._chat, list(transcript_lines), persona, list(preamble)
         )
 
     # -- teardown -----------------------------------------------------------
